@@ -8,9 +8,16 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from config import TELEGRAM_BOT_TOKEN, DEEPSEEK_API_KEY, MIN_CONFIDENCE, MONITOR_INTERVAL_SECONDS
 from data_fetcher import get_all_timeframes
 from indicators import calculate_all
+from snr import analyze_snr
+from ict_smc import analyze_ict_smc
+from news_calendar import get_upcoming_events, get_imminent_events
+from fundamental_analyzer import analyze_fundamental, get_market_session, get_dxy_price
 from ai_analyzer import analyze
-from signal_logger import init_db, log_signal, update_outcome, get_winrate, get_recent_signals
-from formatter import format_signal, format_indicators, format_winrate, format_start
+from signal_logger import init_db, log_signal, get_winrate, get_recent_signals
+from formatter import (
+    format_signal, format_indicators, format_winrate, format_start,
+    format_ict_analysis, format_news, format_news_alert,
+)
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -18,6 +25,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 subscribers = set()
+news_subscribers = set()
+news_warning_cache = {}
 
 async def _run_analysis(force=False):
     try:
@@ -32,7 +41,11 @@ async def _run_analysis(force=False):
         if ind_m5 is None and ind_m15 is None:
             return None, "Data candlestick tidak mencukupi untuk analisa"
 
-        result = analyze(ind_m5, ind_m15, price)
+        result = analyze(
+            data["M5"] if not data["M5"].empty else None,
+            data["M15"] if not data["M15"].empty else None,
+            price, ind_m5, ind_m15,
+        )
 
         if result is None:
             return None, "Gagal mendapat analisa dari AI"
@@ -49,9 +62,7 @@ async def _run_analysis(force=False):
 
 async def send_signal(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
     result, error = await _run_analysis(force=False)
-    if error:
-        return
-    if result is None:
+    if error or result is None:
         return
     msg = format_signal(result)
     try:
@@ -66,9 +77,28 @@ async def monitor_market(context: ContextTypes.DEFAULT_TYPE):
     for chat_id in list(subscribers):
         await send_signal(context, chat_id)
 
+async def monitor_news(context: ContextTypes.DEFAULT_TYPE):
+    if not news_subscribers:
+        return
+    events = get_imminent_events(minutes_ahead=35)
+    now_key = datetime.now().strftime("%Y-%m-%d %H:%M")
+    for event in events:
+        event_key = f"{event['event']}_{event['time']}"
+        cache_val = news_warning_cache.get(event_key)
+        if cache_val and (datetime.now() - cache_val).total_seconds() < 600:
+            continue
+        if 10 <= event["minutes_until"] <= 32:
+            news_warning_cache[event_key] = datetime.now()
+            msg = format_news_alert(event)
+            for chat_id in list(news_subscribers):
+                try:
+                    await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+                except Exception:
+                    continue
+
 async def signal_command(update, context):
     chat_id = update.effective_chat.id
-    await update.message.reply_text("\u23f3 Menganalisa market... (DeepSeek AI processing)")
+    await update.message.reply_text("\u23f3 Menganalisa market... (DeepSeek AI + ICT/SMC + SNR processing)")
     result, error = await _run_analysis(force=True)
     if error:
         await update.message.reply_text(f"\u274c {error}")
@@ -105,6 +135,49 @@ async def unsubscribe_command(update, context):
     await update.message.reply_text("\u2705 Smart Alert dinonaktifkan.")
     logger.info(f"Subscriber removed: {chat_id}")
 
+async def subscribe_news_command(update, context):
+    chat_id = update.effective_chat.id
+    if chat_id in news_subscribers:
+        await update.message.reply_text("\u26a0\ufe0f Anda sudah subscribe news alert.")
+        return
+    news_subscribers.add(chat_id)
+    await update.message.reply_text(
+        "\u2705 *News Alert Aktif!*\n\n"
+        "Bot akan mengirim notifikasi 30 menit sebelum event HIGH impact USD.\n"
+        "Gunakan /unsubscribe_news untuk berhenti.",
+        parse_mode="Markdown",
+    )
+    logger.info(f"News subscriber added: {chat_id}")
+
+async def unsubscribe_news_command(update, context):
+    chat_id = update.effective_chat.id
+    if chat_id not in news_subscribers:
+        await update.message.reply_text("\u26a0\ufe0f Anda belum subscribe news alert.")
+        return
+    news_subscribers.discard(chat_id)
+    await update.message.reply_text("\u2705 News alert dinonaktifkan.")
+    logger.info(f"News subscriber removed: {chat_id}")
+
+async def news_command(update, context):
+    events = get_upcoming_events(hours_ahead=48, min_impact="HIGH")
+    msg = format_news(events)
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def ict_command(update, context):
+    await update.message.reply_text("\u23f3 Menganalisa ICT/SMC + SNR...")
+    data = get_all_timeframes()
+    session = get_market_session()["session"]
+    dxy = get_dxy_price()
+    snr_m5 = analyze_snr(data["M5"]) if not data["M5"].empty else None
+    ict_m5 = analyze_ict_smc(data["M5"]) if not data["M5"].empty else None
+    snr_m15 = analyze_snr(data["M15"]) if not data["M15"].empty else None
+    ict_m15 = analyze_ict_smc(data["M15"]) if not data["M15"].empty else None
+    if not snr_m5 or not snr_m15:
+        await update.message.reply_text("Data tidak mencukupi untuk analisa ICT/SMC.")
+        return
+    msg = format_ict_analysis(snr_m5, ict_m5, snr_m15, ict_m15, session, dxy)
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
 async def winrate_command(update, context):
     wr = get_winrate()
     msg = format_winrate(wr)
@@ -131,13 +204,17 @@ async def status_command(update, context):
     wr = get_winrate()
     data = get_all_timeframes()
     price = data["price"] or "—"
+    fund = analyze_fundamental()
+    news_count = len(get_upcoming_events(hours_ahead=24, min_impact="HIGH"))
     msg = f"""
 \U0001f916 *Status Bot*
 
 \u2022 Status: \u2705 Running
 \u2022 Harga XAUUSD: ${price}
-\u2022 Subscribers: {len(subscribers)}
-\u2022 Monitor interval: setiap {MONITOR_INTERVAL_SECONDS // 60} menit
+\u2022 Session: {fund['session']} | DXY: {fund['dxy'] or 'N/A'}
+\u2022 Signal subs: {len(subscribers)} | News subs: {len(news_subscribers)}
+\u2022 News HIGH hari ini: {news_count}
+\u2022 Monitor: tiap {MONITOR_INTERVAL_SECONDS // 60} menit
 \u2022 Min confidence: {MIN_CONFIDENCE}%
 \u2022 Total sinyal: {wr['total']}
 \u2022 Winrate: {wr['winrate']}%
@@ -168,6 +245,10 @@ def main():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("subscribe", subscribe_command))
     app.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
+    app.add_handler(CommandHandler("subscribe_news", subscribe_news_command))
+    app.add_handler(CommandHandler("unsubscribe_news", unsubscribe_news_command))
+    app.add_handler(CommandHandler("news", news_command))
+    app.add_handler(CommandHandler("ict", ict_command))
     app.add_handler(CommandHandler("winrate", winrate_command))
     app.add_handler(CommandHandler("indicators", indicators_command))
     app.add_handler(CommandHandler("status", status_command))
@@ -175,6 +256,7 @@ def main():
 
     job_queue = app.job_queue
     job_queue.run_repeating(monitor_market, interval=MONITOR_INTERVAL_SECONDS, first=10)
+    job_queue.run_repeating(monitor_news, interval=60, first=20)
 
     logger.info("Bot started. Press Ctrl+C to stop.")
     app.run_polling(drop_pending_updates=True)

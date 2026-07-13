@@ -125,6 +125,20 @@ def support_resistance(data, window=5):
         "nearest_resistance": round(near_resistance, 2) if near_resistance else round(current * 1.005, 2),
     }
 
+def atr(data, period=14):
+    high = data["high"].values
+    low = data["low"].values
+    close = data["close"].values
+    n = len(high)
+    tr = np.zeros(n)
+    tr[0] = high[0] - low[0]
+    for i in range(1, n):
+        tr[i] = max(high[i] - low[i], abs(high[i] - close[i-1]), abs(low[i] - close[i-1]))
+    atr_val = np.mean(tr[:period])
+    for i in range(period, n):
+        atr_val = (atr_val * (period - 1) + tr[i]) / period
+    return round(atr_val, 2)
+
 def calculate_all(data):
     if data.empty or len(data) < 20:
         return None
@@ -142,6 +156,7 @@ def calculate_all(data):
         "bb": bb,
         "stochastic": stoch,
         "sr": support_resistance(data),
+        "atr": atr(data),
         "close": round(data["close"].iloc[-1], 2),
         "high": round(data["high"].max(), 2),
         "low": round(data["low"].min(), 2),

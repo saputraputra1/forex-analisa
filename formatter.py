@@ -9,6 +9,7 @@ def format_signal(data):
     reason = data.get("reason", "—")
     confluence = data.get("timeframe_confluence", False)
     dom_tf = data.get("dominant_timeframe", "M5")
+    ict = data.get("ict_setup", "none")
 
     signal_emoji = {"BUY": "\U0001f7e2", "SELL": "\U0001f534", "HOLD": "\u23f8\ufe0f"}
     direction_emoji = {"BUY": "\U0001f4c8", "SELL": "\U0001f4c9", "HOLD": "\u27a1\ufe0f"}
@@ -21,6 +22,8 @@ def format_signal(data):
     def _fmt(v):
         return f"${v}" if v and float(v) != 0 else "—"
 
+    ict_line = f"\n\u200b*ICT Setup:* {ict}" if ict and ict != "none" else ""
+
     msg = f"""
 {emoji} *SINYAL SCALPING XAUUSD* {dir_emoji}
 {'\u2500' * 30}
@@ -31,7 +34,7 @@ def format_signal(data):
 *Entry:* {_fmt(entry)}
 *Stop Loss:* {_fmt(sl)}
 *Take Profit:* {_fmt(tp)}
-*Risk/Reward:* 1:{_calc_rr(entry, sl, tp, signal)}
+*Risk/Reward:* 1:{_calc_rr(entry, sl, tp, signal)}{ict_line}
 
 *Alasan Entry:* _{reason}_
 
@@ -67,8 +70,56 @@ BB: Upper {ind['bb']['upper']} | Mid {ind['bb']['middle']} | Lower {ind['bb']['l
 Stoch %K: {ind['stochastic']['k']} | %D: {ind['stochastic']['d']}
 EMA 9: {ind['ema_9']} | EMA 21: {ind['ema_21']} | EMA 50: {ind['ema_50']}
 Support: {ind['sr']['nearest_support']} | Res: {ind['sr']['nearest_resistance']}
+ATR: {ind.get('atr', '—')}
 """
     return f"{_fmt('M5', ind_m5)}\n{_fmt('M15', ind_m15)}"
+
+def format_ict_analysis(snr_m5, ict_m5, snr_m15, ict_m15, session, dxy):
+    def _fmt_snr_ict(tf, snr, ict):
+        ob = ict["order_blocks"]
+        fvg = ict["fvg"]
+        liq = ict["liquidity"]
+        return f"""*{tf}:*
+Structure: {snr['trend']} | BOS: {'yes' if snr['bos'] else 'no'} | CHoCH: {snr['choch'] or 'none'}
+Pivot: {snr['pivot']} | R1: {snr['pivot_r1']} | S1: {snr['pivot_s1']}
+S/R: {snr['nearest_support']} / {snr['nearest_resistance']}
+Round: {', '.join(map(str, snr['round_numbers'][:3]))}
+OB: {ict['order_blocks']['total_detected']} detected | FVG: {len(fvg['bullish_fvg'] + fvg['bearish_fvg'])} gap(s)
+Liq Sweep: {'yes' if liq['liquidity_sweep_detected'] else 'no'}
+Buy Liq: {liq['buy_side_liquidity'][:2]} | Sell Liq: {liq['sell_side_liquidity'][:2]}
+Killzone: {ict['killzone'][:30]}
+"""
+    msg = f"""\U0001f9e0 *ICT / SMC + SNR Analysis*
+{'\u2500' * 30}
+Session: {session} | DXY: {dxy}
+{_fmt_snr_ict('M5', snr_m5, ict_m5)}
+{_fmt_snr_ict('M15', snr_m15, ict_m15)}"""
+    return msg
+
+def format_news(events):
+    if not events:
+        return "\u274c Tidak ada event HIGH impact USD hari ini."
+    msg = "\U0001f4c5 *ECONOMIC CALENDAR (HIGH Impact)*\n" + "\u2500" * 30
+    for e in events[:8]:
+        min_str = f"({e['minutes_until']}m lagi)" if e['minutes_until'] > 0 else "(NOW\U0001f525)"
+        msg += f"""
+\U0001f1fa\U0001f1f8 *{e['event']}*
+\u23f1 {e['time']} WIB {min_str}
+Forecast: {e['forecast']} | Prev: {e['previous']}
+"""
+    return msg
+
+def format_news_alert(event):
+    return f"""
+\U0001f514 *NEWS ALERT - HIGH IMPACT*
+{'\u2500' * 30}
+\U0001f1fa\U0001f1f8 {event['event']}
+\u23f1 {event['time']} WIB ({event['minutes_until']} menit lagi)
+Forecast: {event['forecast']} | Previous: {event['previous']}
+
+\u26a0\ufe0f Volatility diprediksi TINGGI
+Hindari entry scalping 5 menit sebelum & sesudah rilis.
+"""
 
 def format_winrate(wr):
     bar_wins = "\u2588" * (wr["wins"] if wr["closed"] > 0 else 0)
@@ -87,18 +138,23 @@ Closed: {wr['closed']}
 
 def format_start():
     return f"""
-\U0001f916 *XAUUSD Scalping Signal Bot*
-
-Bot ini memberikan sinyal trading XAUUSD (Gold) untuk *scalping* dengan target winrate 85-90% menggunakan AI (DeepSeek).
+\U0001f916 *XAUUSD Scalping Signal Bot v2.0*
+{'\u2500' * 25}
+\u2728 *NEW:* ICT/SMC + SNR + Fundamental Analysis
 
 *Commands:*
 /signal \u2014 Sinyal instan (bypass filter)
 /start \u2014 Pesan ini
-/subscribe \u2014 Aktifkan smart alert (auto-kirim saat confidence \u226580%)
+/subscribe \u2014 Aktifkan smart alert (sinyal confidence \u226580%)
 /unsubscribe \u2014 Nonaktifkan smart alert
+/subscribe_news \u2014 Alert news HIGH impact
+/unsubscribe_news \u2014 Stop news alert
+/news \u2014 Jadwal ekonomi hari ini
+/ict \u2014 Detail ICT/SMC + SNR analysis
+/indicators \u2014 Indikator teknikal
 /winrate \u2014 Statistik winrate
-/indicators \u2014 Detail indikator teknikal
 /status \u2014 Status bot
 
-*Smart Alert:* Bot monitor market tiap 2 menit & kirim sinyal hanya ketika setup bagus.
+*Smart Alert:* Monitor market tiap 2 menit + kirim sinyal setup bagus.
+*News Alert:* Notifikasi 30 menit sebelum event HIGH impact USD.
 """
