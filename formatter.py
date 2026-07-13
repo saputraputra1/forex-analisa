@@ -147,8 +147,8 @@ def format_start():
 /start \u2014 Pesan ini
 /subscribe \u2014 Aktifkan smart alert (sinyal confidence \u226580%)
 /unsubscribe \u2014 Nonaktifkan smart alert
-/subscribe_news \u2014 Alert news HIGH impact
-/unsubscribe_news \u2014 Stop news alert
+/subscribe\\_news \u2014 Alert news HIGH impact
+/unsubscribe\\_news \u2014 Stop news alert
 /news \u2014 Jadwal ekonomi hari ini
 /ict \u2014 Detail ICT/SMC + SNR analysis
 /indicators \u2014 Indikator teknikal

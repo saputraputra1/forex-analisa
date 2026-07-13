@@ -144,7 +144,7 @@ async def subscribe_news_command(update, context):
     await update.message.reply_text(
         "\u2705 *News Alert Aktif!*\n\n"
         "Bot akan mengirim notifikasi 30 menit sebelum event HIGH impact USD.\n"
-        "Gunakan /unsubscribe_news untuk berhenti.",
+        "Gunakan /unsubscribe\\_news untuk berhenti.",
         parse_mode="Markdown",
     )
     logger.info(f"News subscriber added: {chat_id}")
