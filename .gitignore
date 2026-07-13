@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.env
+signal_log.db
+venv/
+.env
