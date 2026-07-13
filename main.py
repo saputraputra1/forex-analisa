@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 
-from telegram import Update
+from telegram import Update, BotCommand
 from telegram.error import Conflict
 from telegram.ext import Application, CommandHandler, ContextTypes
 
@@ -240,6 +240,23 @@ def main():
     logger.info("Database initialized")
 
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+
+    cmds = [
+        BotCommand("signal", "Sinyal scalping instan"),
+        BotCommand("start", "Info bot & commands"),
+        BotCommand("subscribe", "Aktifkan auto-signal"),
+        BotCommand("unsubscribe", "Nonaktifkan auto-signal"),
+        BotCommand("subscribe_news", "Alert news HIGH impact"),
+        BotCommand("unsubscribe_news", "Stop news alert"),
+        BotCommand("news", "Jadwal ekonomi hari ini"),
+        BotCommand("ict", "Detail ICT/SMC + SNR"),
+        BotCommand("indicators", "Indikator teknikal"),
+        BotCommand("winrate", "Statistik winrate"),
+        BotCommand("status", "Status bot"),
+    ]
+    async def _post_init(app):
+        await app.bot.set_my_commands(cmds)
+    app.post_init = _post_init
 
     app.add_handler(CommandHandler("signal", signal_command))
     app.add_handler(CommandHandler("start", start_command))
