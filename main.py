@@ -159,9 +159,13 @@ async def unsubscribe_news_command(update, context):
     logger.info(f"News subscriber removed: {chat_id}")
 
 async def news_command(update, context):
-    events = get_upcoming_events(hours_ahead=48, min_impact="HIGH")
-    msg = format_news(events)
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    try:
+        events = get_upcoming_events(hours_ahead=48, min_impact="HIGH")
+        msg = format_news(events)
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    except Exception as e:
+        logger.exception("News command failed")
+        await update.message.reply_text(f"\u274c Gagal mengambil jadwal news: {str(e)[:100]}")
 
 async def ict_command(update, context):
     await update.message.reply_text("\u23f3 Menganalisa ICT/SMC + SNR...")
@@ -239,8 +243,6 @@ def main():
     init_db()
     logger.info("Database initialized")
 
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
     cmds = [
         BotCommand("signal", "Sinyal scalping instan"),
         BotCommand("start", "Info bot & commands"),
@@ -254,9 +256,15 @@ def main():
         BotCommand("winrate", "Statistik winrate"),
         BotCommand("status", "Status bot"),
     ]
-    async def _post_init(app):
-        await app.bot.set_my_commands(cmds)
-    app.post_init = _post_init
+
+    async def _post_init(application):
+        try:
+            await application.bot.set_my_commands(cmds)
+            logger.info("Bot commands registered in Telegram menu")
+        except Exception as e:
+            logger.warning(f"Could not set bot commands: {e}")
+
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(_post_init).build()
 
     app.add_handler(CommandHandler("signal", signal_command))
     app.add_handler(CommandHandler("start", start_command))
