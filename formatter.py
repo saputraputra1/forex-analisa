@@ -18,6 +18,9 @@ def format_signal(data):
     conf_bar = "\u2588" * (confidence // 10) + "\u2591" * ((10 - confidence // 10))
     conf_color = "\U0001f7e2" if confidence >= 80 else "\U0001f7e0" if confidence >= 60 else "\U0001f534"
 
+    def _fmt(v):
+        return f"${v}" if v and float(v) != 0 else "—"
+
     msg = f"""
 {emoji} *SINYAL SCALPING XAUUSD* {dir_emoji}
 {'\u2500' * 30}
@@ -25,9 +28,9 @@ def format_signal(data):
 *Sinyal:* {signal}
 *Confidence:* {conf_color} {confidence}%
 {conf_bar}
-*Entry:* ${entry}
-*Stop Loss:* ${sl}
-*Take Profit:* ${tp}
+*Entry:* {_fmt(entry)}
+*Stop Loss:* {_fmt(sl)}
+*Take Profit:* {_fmt(tp)}
 *Risk/Reward:* 1:{_calc_rr(entry, sl, tp, signal)}
 
 *Alasan Entry:* _{reason}_
