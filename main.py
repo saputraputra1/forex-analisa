@@ -168,7 +168,7 @@ def main():
     job_queue.run_repeating(monitor_market, interval=MONITOR_INTERVAL_SECONDS, first=10)
 
     logger.info("Bot started. Press Ctrl+C to stop.")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
