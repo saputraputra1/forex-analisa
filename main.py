@@ -1,6 +1,8 @@
 import logging
 from datetime import datetime
 
+from telegram import Update
+from telegram.error import Conflict
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 from config import TELEGRAM_BOT_TOKEN, DEEPSEEK_API_KEY, MIN_CONFIDENCE, MONITOR_INTERVAL_SECONDS
@@ -143,6 +145,12 @@ async def status_command(update, context):
 """
     await update.message.reply_text(msg, parse_mode="Markdown")
 
+async def error_handler(update, context):
+    if isinstance(context.error, Conflict):
+        logger.warning("Telegram Conflict: another instance detected, retrying...")
+        return
+    logger.error(f"Error: {context.error}", exc_info=context.error)
+
 def main():
     if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
         print("\u274c ERROR: TELEGRAM_BOT_TOKEN belum diisi di file .env")
@@ -163,6 +171,7 @@ def main():
     app.add_handler(CommandHandler("winrate", winrate_command))
     app.add_handler(CommandHandler("indicators", indicators_command))
     app.add_handler(CommandHandler("status", status_command))
+    app.add_error_handler(error_handler)
 
     job_queue = app.job_queue
     job_queue.run_repeating(monitor_market, interval=MONITOR_INTERVAL_SECONDS, first=10)
