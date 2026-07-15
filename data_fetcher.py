@@ -98,19 +98,27 @@ def get_spot_price_xe():
     return None
 
 def get_live_price():
-    # priority 1: yfinance GC=F fast_info (sama dengan data candle)
+    # priority 1: XAUUSD spot (sama dengan chart broker)
+    try:
+        ticker = yf.Ticker("XAUUSD=X")
+        fi = ticker.fast_info
+        if fi.last_price and fi.last_price > 100:
+            return round(fi.last_price, 2), "XAUUSD spot (yfinance)"
+    except Exception:
+        pass
+    # priority 2: GC=F fast_info
     try:
         ticker = yf.Ticker(SYMBOL)
         fi = ticker.fast_info
-        if fi.last_price:
+        if fi.last_price and fi.last_price > 100:
             return round(fi.last_price, 2), "GC=F futures (yfinance)"
     except Exception:
         pass
-    # priority 2: last candle 1m/5m
+    # priority 3: last candle 1m/5m
     cp = get_current_price()
     if cp:
         return cp, "GC=F futures (yfinance)"
-    # priority 3: xe.com spot
+    # priority 4: xe.com spot
     spot = get_spot_price_xe()
     if spot is not None:
         return spot, "XAUUSD spot (xe.com)"
