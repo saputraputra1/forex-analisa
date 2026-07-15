@@ -5,7 +5,7 @@ from telegram import Update, BotCommand
 from telegram.error import Conflict
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-from config import TELEGRAM_BOT_TOKEN, DEEPSEEK_API_KEY, MIN_CONFIDENCE, MONITOR_INTERVAL_SECONDS
+from config import TELEGRAM_BOT_TOKEN, NVIDIA_API_KEY, MIN_CONFIDENCE, MONITOR_INTERVAL_SECONDS
 from data_fetcher import get_all_timeframes
 from indicators import calculate_all
 from snr import analyze_snr
@@ -236,8 +236,8 @@ def main():
     if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
         print("\u274c ERROR: TELEGRAM_BOT_TOKEN belum diisi di file .env")
         return
-    if not DEEPSEEK_API_KEY or DEEPSEEK_API_KEY == "YOUR_DEEPSEEK_API_KEY":
-        print("\u274c ERROR: DEEPSEEK_API_KEY belum diisi di file .env")
+    if not NVIDIA_API_KEY or NVIDIA_API_KEY == "YOUR_NVIDIA_API_KEY":
+        print("\u274c ERROR: NVIDIA_API_KEY belum diisi di file .env")
         return
 
     init_db()

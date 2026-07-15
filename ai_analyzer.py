@@ -1,5 +1,5 @@
 from openai import OpenAI
-from config import DEEPSEEK_API_KEY, DEEPSEEK_MODEL, DEEPSEEK_BASE_URL
+from config import NVIDIA_API_KEY, NVIDIA_MODEL, NVIDIA_BASE_URL
 from snr import analyze_snr
 from ict_smc import analyze_ict_smc
 from fundamental_analyzer import get_market_session, get_dxy_price
@@ -7,8 +7,8 @@ import json
 import time
 
 client = OpenAI(
-    api_key=DEEPSEEK_API_KEY,
-    base_url=DEEPSEEK_BASE_URL,
+    api_key=NVIDIA_API_KEY,
+    base_url=NVIDIA_BASE_URL,
 )
 
 def _build_prompt(data_m5, data_m15, price, ind_m5, ind_m15):
@@ -97,10 +97,12 @@ def analyze(data_m5, data_m15, price, ind_m5=None, ind_m15=None, max_retries=3):
     for attempt in range(max_retries):
         try:
             resp = client.chat.completions.create(
-                model=DEEPSEEK_MODEL,
+                model=NVIDIA_MODEL,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_tokens=400,
+                temperature=1,
+                top_p=1,
+                max_tokens=800,
+                seed=42,
             )
             text = resp.choices[0].message.content.strip()
             text = text.replace("```json", "").replace("```", "").strip()
@@ -144,7 +146,7 @@ def _fallback_signal(price, ind_m5):
         "entry": price,
         "stop_loss": round(price * 0.995, 2) if signal == "BUY" else round(price * 1.005, 2),
         "take_profit": round(price * 1.005, 2) if signal == "BUY" else round(price * 0.995, 2),
-        "reason": "Fallback: analisa berdasarkan RSI saja (DeepSeek error)",
+        "reason": "Fallback: analisa berdasarkan RSI saja (AI error)",
         "timeframe_confluence": False,
         "dominant_timeframe": "M5",
         "ict_setup": "none",
