@@ -71,16 +71,19 @@ async def _run_analysis(force=False):
         logger.exception("Error in _run_analysis")
         return None, f"Error: {str(e)}"
 
+def _pick_best_signal(signals: list) -> dict:
+    return max(signals, key=lambda s: s["confidence"])
+
 async def send_signal(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
     results, error = await _run_analysis(force=False)
     if error or results is None:
         return
-    for result in results:
-        msg = format_signal(result)
-        try:
-            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
-        except Exception as e:
-            logger.error(f"Failed to send signal: {e}")
+    best = _pick_best_signal(results)
+    msg = format_signal(best)
+    try:
+        await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Failed to send signal: {e}")
 
 async def monitor_market(context: ContextTypes.DEFAULT_TYPE):
     if not subscribers:
@@ -146,9 +149,11 @@ async def signal_command(update, context):
     if not results:
         await update.message.reply_text("\u23f8\ufe0f Tidak ada sinyal valid saat ini.")
         return
-    for result in results:
-        msg = format_signal(result)
-        await update.message.reply_text(msg, parse_mode="Markdown")
+    best = _pick_best_signal(results)
+    msg = format_signal(best)
+    if len(results) > 1:
+        msg += f"\n\n_({len(results)-1} zona entry lain ditemukan, hanya ditampilkan yang terbaik)_"
+    await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def start_command(update, context):
     await update.message.reply_text(format_start(), parse_mode="Markdown")
