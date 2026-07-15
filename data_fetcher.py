@@ -9,7 +9,7 @@ from config import now_jakarta
 
 SYMBOL = "GC=F"
 
-_spot_cache = {"price": None, "timestamp": 0}
+_spot_cache = {"price": None, "timestamp": -9999}
 SPOT_CACHE_TTL = 30
 
 STALE_THRESHOLD_MIN = {
@@ -88,7 +88,7 @@ def get_spot_price_xe():
             timeout=10,
         )
         if r.status_code == 200:
-            m = re.search(r'1 XAU\s*=\s*([\d,]+\.\d{2})\s*USD', r.text)
+            m = re.search(r'1\.?\s*XAU\s*=?\s*([\d,]+\.\d{2,4})\s*USD', r.text)
             if m:
                 price = float(m.group(1).replace(",", ""))
                 _spot_cache = {"price": round(price, 2), "timestamp": now}
@@ -98,9 +98,7 @@ def get_spot_price_xe():
     return None
 
 def get_live_price():
-    spot = get_spot_price_xe()
-    if spot is not None:
-        return spot, "XAUUSD spot (xe.com)"
+    # priority 1: yfinance GC=F fast_info (sama dengan data candle)
     try:
         ticker = yf.Ticker(SYMBOL)
         fi = ticker.fast_info
@@ -108,9 +106,14 @@ def get_live_price():
             return round(fi.last_price, 2), "GC=F futures (yfinance)"
     except Exception:
         pass
+    # priority 2: last candle 1m/5m
     cp = get_current_price()
     if cp:
         return cp, "GC=F futures (yfinance)"
+    # priority 3: xe.com spot
+    spot = get_spot_price_xe()
+    if spot is not None:
+        return spot, "XAUUSD spot (xe.com)"
     return None, "N/A"
 
 def get_all_timeframes():
