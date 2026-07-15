@@ -97,8 +97,25 @@ def get_spot_price_xe():
         pass
     return None
 
+def get_spot_price_metals_live():
+    try:
+        r = requests.get(
+            "https://api.metals.live/v1/spot/gold",
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            if data and len(data) > 0:
+                price = data[0].get("price")
+                if price and float(price) > 100:
+                    return round(float(price), 2)
+    except Exception:
+        pass
+    return None
+
 def get_live_price():
-    # priority 1: XAUUSD spot (sama dengan chart broker)
+    # priority 1: XAUUSD spot via yfinance
     try:
         ticker = yf.Ticker("XAUUSD=X")
         fi = ticker.fast_info
@@ -106,7 +123,15 @@ def get_live_price():
             return round(fi.last_price, 2), "XAUUSD spot (yfinance)"
     except Exception:
         pass
-    # priority 2: GC=F fast_info
+    # priority 2: metals.live API
+    spot = get_spot_price_metals_live()
+    if spot is not None:
+        return spot, "XAUUSD spot (metals.live)"
+    # priority 3: xe.com spot
+    spot = get_spot_price_xe()
+    if spot is not None:
+        return spot, "XAUUSD spot (xe.com)"
+    # priority 4: GC=F fast_info
     try:
         ticker = yf.Ticker(SYMBOL)
         fi = ticker.fast_info
@@ -114,14 +139,10 @@ def get_live_price():
             return round(fi.last_price, 2), "GC=F futures (yfinance)"
     except Exception:
         pass
-    # priority 3: last candle 1m/5m
+    # priority 5: last candle 1m/5m
     cp = get_current_price()
     if cp:
         return cp, "GC=F futures (yfinance)"
-    # priority 4: xe.com spot
-    spot = get_spot_price_xe()
-    if spot is not None:
-        return spot, "XAUUSD spot (xe.com)"
     return None, "N/A"
 
 def get_all_timeframes():
