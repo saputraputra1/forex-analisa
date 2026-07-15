@@ -1,10 +1,16 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import requests
+import re
+import time
 from datetime import datetime, timezone
 from config import now_jakarta
 
 SYMBOL = "GC=F"
+
+_spot_cache = {"price": None, "timestamp": 0}
+SPOT_CACHE_TTL = 30
 
 STALE_THRESHOLD_MIN = {
     "M5": 15,
@@ -70,15 +76,42 @@ def _get_candle_age_min(df):
     delta = now_utc - last_time
     return delta.total_seconds() / 60
 
+def get_spot_price_xe():
+    global _spot_cache
+    now = time.time()
+    if _spot_cache["price"] and now - _spot_cache["timestamp"] < SPOT_CACHE_TTL:
+        return _spot_cache["price"]
+    try:
+        r = requests.get(
+            "https://www.xe.com/currencyconverter/convert/?From=XAU&To=USD",
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            m = re.search(r'1 XAU\s*=\s*([\d,]+\.\d{2})\s*USD', r.text)
+            if m:
+                price = float(m.group(1).replace(",", ""))
+                _spot_cache = {"price": round(price, 2), "timestamp": now}
+                return round(price, 2)
+    except Exception:
+        pass
+    return None
+
 def get_live_price():
+    spot = get_spot_price_xe()
+    if spot is not None:
+        return spot, "XAUUSD spot (xe.com)"
     try:
         ticker = yf.Ticker(SYMBOL)
         fi = ticker.fast_info
         if fi.last_price:
-            return round(fi.last_price, 2)
+            return round(fi.last_price, 2), "GC=F futures (yfinance)"
     except Exception:
         pass
-    return get_current_price()
+    cp = get_current_price()
+    if cp:
+        return cp, "GC=F futures (yfinance)"
+    return None, "N/A"
 
 def get_all_timeframes():
     m5 = get_live_candles_m5(50)
@@ -87,14 +120,17 @@ def get_all_timeframes():
     h4 = resample_h4(h1)
     d1 = get_live_candles_d1(30)
 
-    price = get_live_price()
+    price, price_source = get_live_price()
     if price is None:
+        price_source = "GC=F futures (yfinance)"
         for df in [m5, m15, h1, h4, d1]:
             if not df.empty:
                 price = round(df["close"].iloc[-1], 2)
                 break
     if price is None:
-        price = get_current_price()
+        cp = get_current_price()
+        if cp:
+            price = cp
 
     data_stale = False
     for tf_name, df, threshold in [
@@ -114,6 +150,6 @@ def get_all_timeframes():
         "H4": h4,
         "D1": d1,
         "data_stale": data_stale,
-        "price_source": "GC=F futures",
+        "price_source": price_source,
         "timestamp": now_jakarta().strftime("%Y-%m-%d %H:%M:%S"),
     }
