@@ -271,7 +271,7 @@ async def status_command(update, context):
 \U0001f916 *Status Bot*
 
 \u2022 Status: \u2705 Running
-\u2022 Harga XAUUSD: ${price}
+\u2022 Harga XAUUSD: ${price} ({data.get('price_source', 'GC=F')})
 \u2022 Session: {fund['session']} | DXY: {fund['dxy'] or 'N/A'}
 \u2022 Signal subs: {len(subscribers)} | News subs: {len(news_subscribers)}
 \u2022 News HIGH hari ini: {news_count}
