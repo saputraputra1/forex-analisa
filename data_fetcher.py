@@ -70,6 +70,16 @@ def _get_candle_age_min(df):
     delta = now_utc - last_time
     return delta.total_seconds() / 60
 
+def get_live_price():
+    try:
+        ticker = yf.Ticker(SYMBOL)
+        fi = ticker.fast_info
+        if fi.last_price:
+            return round(fi.last_price, 2)
+    except Exception:
+        pass
+    return get_current_price()
+
 def get_all_timeframes():
     m5 = get_live_candles_m5(50)
     m15 = get_live_candles_m15(30)
@@ -77,11 +87,12 @@ def get_all_timeframes():
     h4 = resample_h4(h1)
     d1 = get_live_candles_d1(30)
 
-    price = None
-    for df in [m5, m15, h1, h4, d1]:
-        if not df.empty:
-            price = round(df["close"].iloc[-1], 2)
-            break
+    price = get_live_price()
+    if price is None:
+        for df in [m5, m15, h1, h4, d1]:
+            if not df.empty:
+                price = round(df["close"].iloc[-1], 2)
+                break
     if price is None:
         price = get_current_price()
 
@@ -103,5 +114,6 @@ def get_all_timeframes():
         "H4": h4,
         "D1": d1,
         "data_stale": data_stale,
+        "price_source": "GC=F futures",
         "timestamp": now_jakarta().strftime("%Y-%m-%d %H:%M:%S"),
     }

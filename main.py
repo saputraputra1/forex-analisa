@@ -60,6 +60,7 @@ async def _run_analysis(force=False):
                 sid = log_signal(s)
                 s["_id"] = sid
                 s["_data_stale"] = data.get("data_stale", False)
+                s["_price_source"] = data.get("price_source", "")
                 results.append(s)
 
         if not results:

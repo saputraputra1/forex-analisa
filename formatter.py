@@ -27,6 +27,8 @@ def format_signal(data):
     ict_line = f"\n\u200b*ICT Setup:* {ict}" if ict and ict != "none" else ""
     bias_emoji = {"bullish": "\U0001f7e2", "bearish": "\U0001f534", "neutral": "\u26aa"}.get(htf_bias, "\u26aa")
     stale_warn = "\n\u26a0\ufe0f *Data mungkin stale (market tutup)*\n" if data.get("_data_stale") else ""
+    src = data.get("_price_source", "")
+    src_line = f"\n*Sumber:* {src}" if src else ""
 
     msg = f"""
 {emoji} *SINYAL SCALPING XAUUSD* {dir_emoji}
@@ -42,6 +44,7 @@ def format_signal(data):
 
 *HTF Bias:* {bias_emoji} {htf_bias.upper()}
 *Dominant TF:* {dom_tf} | Multi-TF Konfluensi: {'\u2705 Ya' if confluence else '\u26a0\ufe0f Tidak'}
+{src_line}
 
 *Alasan Entry:* _{reason}_
 
