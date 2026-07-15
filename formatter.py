@@ -186,6 +186,25 @@ Durasi: {dur}
 Waktu: {now_jakarta().strftime('%H:%M')} WIB
 """
 
+def format_outcomes_summary(wins, losses):
+    lines = []
+    if wins:
+        lines.append("\U0001f3af *TP KENA \\- Rangkuman*")
+        lines.append("\u2500" * 30)
+        for h in wins:
+            pips = h.get("pips", 0)
+            lines.append(f"\u2705 *{h['signal']}* Entry ${h['entry']} \\| TP ${h['take_profit']} \\| +{pips} pips")
+        lines.append("")
+    if losses:
+        lines.append("\U0001f4a5 *SL KENA \\- Rangkuman*")
+        lines.append("\u2500" * 30)
+        for h in losses:
+            pips = h.get("pips", 0)
+            lines.append(f"\u274c *{h['signal']}* Entry ${h['entry']} \\| SL ${h['stop_loss']} \\| {pips} pips")
+        lines.append("")
+    lines.append(f"Waktu: {now_jakarta().strftime('%H:%M')} WIB")
+    return "\n".join(lines)
+
 def format_winrate(wr):
     bar_wins = "\u2588" * (wr["wins"] if wr["closed"] > 0 else 0)
     bar_losses = "\u2591" * (wr["losses"] if wr["closed"] > 0 else 0)

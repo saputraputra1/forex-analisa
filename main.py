@@ -18,7 +18,7 @@ from signal_logger import init_db, log_signal, get_winrate, get_recent_signals, 
 from formatter import (
     format_signal, format_indicators, format_winrate, format_start,
     format_ict_analysis, format_news, format_news_alert,
-    format_tp_alert, format_sl_alert,
+    format_tp_alert, format_sl_alert, format_outcomes_summary,
 )
 
 logging.basicConfig(
@@ -124,13 +124,10 @@ async def monitor_outcomes(context: ContextTypes.DEFAULT_TYPE):
         if not hits:
             return
         logger.info(f"Outcome alerts: {len(hits)} signal(s) hit TP/SL")
-        for h in hits:
-            if h["outcome"] == "WIN":
-                msg = format_tp_alert(h)
-            elif h["outcome"] == "LOSS":
-                msg = format_sl_alert(h)
-            else:
-                continue
+        wins = [h for h in hits if h["outcome"] == "WIN"]
+        losses = [h for h in hits if h["outcome"] == "LOSS"]
+        if wins or losses:
+            msg = format_outcomes_summary(wins, losses)
             for chat_id in list(subscribers):
                 try:
                     await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
