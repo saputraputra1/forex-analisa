@@ -11,21 +11,30 @@ client = OpenAI(
     base_url=NVIDIA_BASE_URL,
 )
 
-def _build_prompt(data_m5, data_m15, price, ind_m5, ind_m15):
-    def fmt_ind(tf_name, ind, snr_data, ict_data):
-        if ind is None:
-            return f"[{tf_name}] Data tidak mencukupi"
-        bb = ind["bb"]
-        stoch = ind["stochastic"]
-        fvg = ict_data["fvg"]
-        ob = ict_data["order_blocks"]
-        liq = ict_data["liquidity"]
-        bulls = [f"{o['zone_bottom']}-{o['zone_top']}" for o in ob["bullish_obs"]]
-        bears = [f"{o['zone_bottom']}-{o['zone_top']}" for o in ob["bearish_obs"]]
-        bfvg = [f"{g['gap_bottom']}-{g['gap_top']}" for g in fvg["bullish_fvg"]]
-        bfvg_s = [f"{g['gap_bottom']}-{g['gap_top']}" for g in fvg["bearish_fvg"]]
-        killzone = ict_data["killzone"]
-        return f"""[{tf_name} - TEKNIKAL]
+TF_ROLES = {
+    "D1": "Overall bias (bullish/bearish/neutral) dan key support/resistance major",
+    "H4": "Market structure, Order Block besar, dan level kunci",
+    "H1": "Entry confirmation, OB/FVG zones, dan trend menengah",
+    "M15": "Timing entry, konfluensi dengan HTF",
+    "M5": "Precision entry, scalping trigger, dan momentum",
+}
+
+def _fmt_ind(tf_name, ind, snr_data, ict_data):
+    if ind is None:
+        return f"[{tf_name}] Data tidak mencukupi"
+    bb = ind["bb"]
+    stoch = ind["stochastic"]
+    fvg = ict_data["fvg"]
+    ob = ict_data["order_blocks"]
+    liq = ict_data["liquidity"]
+    bulls = [f"{o['zone_bottom']}-{o['zone_top']}" for o in ob["bullish_obs"]]
+    bears = [f"{o['zone_bottom']}-{o['zone_top']}" for o in ob["bearish_obs"]]
+    bfvg = [f"{g['gap_bottom']}-{g['gap_top']}" for g in fvg["bullish_fvg"]]
+    bfvg_s = [f"{g['gap_bottom']}-{g['gap_top']}" for g in fvg["bearish_fvg"]]
+    killzone = ict_data["killzone"]
+    role = TF_ROLES.get(tf_name, "")
+    return f"""[{tf_name} - Role: {role}]
+[{tf_name} - TEKNIKAL]
 Close: {ind['close']} | High: {ind['high']} | Low: {ind['low']}
 RSI(7): {ind['rsi']}
 MACD: {ind['macd']['macd']} / Signal {ind['macd']['signal']} / Hist {ind['macd']['histogram']}
@@ -52,66 +61,78 @@ Liquidity Sweep: {'yes - ' + str(liq['sweep_level']) if liq['liquidity_sweep_det
 Buy-side Liq: {', '.join(map(str, liq['buy_side_liquidity'])) if liq['buy_side_liquidity'] else 'none'}
 Sell-side Liq: {', '.join(map(str, liq['sell_side_liquidity'])) if liq['sell_side_liquidity'] else 'none'}"""
 
+
+def _build_prompt(tf_analysis, price):
     session = get_market_session()
     dxy = get_dxy_price()
 
-    prompt = f"""[ROLE]
-Anda adalah analis trading XAUUSD (Gold vs USD) spesialis SCALPING dengan konsep ICT/SMC (Inner Circle Trader / Smart Money Concepts). Target winrate 85-90%. Tugas Anda adalah MENEMUKAN setup trading, bukan menolaknya. Jika ada 1-2 konfluensi saja, sudah cukup untuk memberikan sinyal.
+    tf_blocks = []
+    for tf_name in ["D1", "H4", "H1", "M15", "M5"]:
+        if tf_name in tf_analysis:
+            df, ind, snr, ict = tf_analysis[tf_name]
+            tf_blocks.append(_fmt_ind(tf_name, ind, snr, ict))
+        else:
+            tf_blocks.append(f"[{tf_name}] Data tidak tersedia")
+    tf_text = "\n\n".join(tf_blocks)
 
-[INSTRUKSI]
-1. Analisa data TEKNIKAL + SNR + ICT/SMC M5 dan M15 di bawah
-2. Hasilkan ARRAY 2-5 sinyal berbeda (buy dan sell boleh campur tergantung setup)
-3. Setiap sinyal harus punya entry presisi di OB/FVG/support/resistance zone
-4. Gunakan konsep ICT/SMC: Order Block, FVG, Liquidity Sweep, Killzone, Market Structure
-5. Confidence minimal 55% untuk BUY/SELL. Hanya HOLD jika market benar-benar flat/ranging tanpa arah
-6. Entry price presisi (idealnya di OB/FVG zone)
-7. Stop loss di bawah/atas OB terdekat atau swing high/low (max 30 pips / $30)
-8. Take profit di liquidity atau swing terdekat (min 1:1.5 RR)
-9. Alasan harus mencakup: konfluensi teknikal, SNR level, ICT setup, dan killzone
-10. Jika ada BOS/CHoCH + OB/FVG yang searah, WAJIB kasih sinyal (jangan HOLD)
+    prompt = f"""[ROLE]
+Anda adalah analis trading XAUUSD (Gold vs USD) spesialis SCALPING dengan konsep ICT/SMC. Target winrate 85-90%. Tugas Anda adalah MENEMUKAN setup trading berdasarkan multi-timeframe analysis.
+
+[TIMEFRAME ROLES]
+- D1 (Daily): Overall bias — bullish/bearish/neutral, key S/R major
+- H4 (4-Hour): Market structure, Order Block besar, level kunci
+- H1 (1-Hour): Entry confirmation, OB/FVG zones, trend menengah
+- M15 (15-Min): Timing entry, konfluensi dengan HTF
+- M5 (5-Min): Precision entry, scalping trigger, momentum
+
+[INSTRUKSI MULTI-TIMEFRAME]
+1. Analisa D1 dulu untuk tentukan BIAS (bullish/bearish/neutral)
+2. H4 cari structure break (BOS/CHoCH) dan Order Block besar
+3. H1 cari konfirmasi entry di OB/FVG zone yang SEARAH dengan bias D1/H4
+4. M15 cek timing dan konfluensi
+5. M5 cari precision entry (trigger point)
+6. Jika D1 bullish + H4 ada bullish OB + H1 ada FVG di atas OB = BUY valid
+7. Jika D1 bearish + H4 ada bearish OB + H1 ada FVG di bawah OB = SELL valid
+8. Confidence berdasarkan jumlah konfluensi lintas timeframe:
+   - 3+ TF searah = 80-95%
+   - 2 TF searah = 65-80%
+   - Hanya 1 TF = 55-65%
+9. Entry presisi di OB/FVG zone dari H1/M15
+10. SL di bawah/atas OB dari H4 (lebih aman)
+11. TP di liquidity zone dari H4/D1
+12. Hasilkan ARRAY 2-5 sinyal berbeda
 
 [TIPS AGAR TIDAK HOLD]
-- RSI < 35 atau > 65 = momentum kuat, cari entry searah
-- MACD histogram berubah warna = potensi reversal
-- Harga di dekat OB/FVG + ada BOS = entry valid
-- Stochastic oversold/overbought + BB squeeze = breakout imminent
-- EMA crossover (9 vs 21) = trend shift, cari entry pullback
+- Jika D1 trend jelas (strong bullish/bearish), WAJIB cari entry
+- Jika H4 ada OB yang belum di-test, itu entry zone
+- Jika H1 ada BOS + FVG searah dengan D1, itu sinyal kuat
+- RSI oversold/overbought di HTF = momentum kuat
+- EMA crossover di H1/H4 = trend shift
 
 [DATA SAAT INI]
 Harga Spot: ${price}
 Market Session: {session['session']} (volatility: {session['volatility']})
 DXY (Dollar Index): {dxy or 'N/A'}
 
-{fmt_ind("M5", ind_m5, analyze_snr(data_m5), analyze_ict_smc(data_m5)) if ind_m5 is not None else "[M5] Data tidak mencukupi"}
+{tf_text}
 
-{fmt_ind("M15", ind_m15, analyze_snr(data_m15), analyze_ict_smc(data_m15)) if ind_m15 is not None else "[M15] Data tidak mencukupi"}
-
-[OUTPUT FORMAT - JSON ARRAY SAJA, minimal 2 sinyal]:
+[OUTPUT FORMAT - JSON ARRAY, minimal 2 sinyal]:
 [
   {{
     "signal": "BUY" | "SELL",
-    "confidence": 72,
+    "confidence": 82,
     "entry": 2345.67,
     "stop_loss": 2338.00,
     "take_profit": 2353.00,
-    "reason": "Alasan teknikal + ICT/SMC + SNR (max 3 kalimat)",
+    "reason": "D1 bullish bias, H4 bullish OB di 2340-2345, H1 FVG di 2343, M15 BOS bullish (max 3 kalimat)",
     "timeframe_confluence": true,
-    "dominant_timeframe": "M5",
-    "ict_setup": "OB + FVG"
-  }},
-  {{
-    "signal": "SELL",
-    "confidence": 65,
-    "entry": 2350.00,
-    "stop_loss": 2356.00,
-    "take_profit": 2340.00,
-    "reason": "...",
-    "timeframe_confluence": false,
-    "dominant_timeframe": "M15",
-    "ict_setup": "Liquidity Sweep + Bearish OB"
+    "dominant_timeframe": "H1",
+    "ict_setup": "OB + FVG + BOS",
+    "htf_bias": "bullish"
   }}
 ]"""
     return prompt
+
 
 def _validate_signal(result, price):
     required = ["signal", "confidence", "entry", "stop_loss", "take_profit", "reason"]
@@ -125,12 +146,43 @@ def _validate_signal(result, price):
     result["confidence"] = min(100, max(0, int(result["confidence"])))
     if "ict_setup" not in result:
         result["ict_setup"] = "none"
+    if "htf_bias" not in result:
+        result["htf_bias"] = "neutral"
     if result["entry"] is None:
         result["entry"] = price
     return result
 
-def analyze(data_m5, data_m15, price, ind_m5=None, ind_m15=None, max_retries=3):
-    prompt = _build_prompt(data_m5, data_m15, price, ind_m5, ind_m15)
+
+def _fallback_signal(price, ind_m5):
+    rsi_val = 50
+    if ind_m5 and "rsi" in ind_m5:
+        rsi_val = ind_m5["rsi"]
+    signal = "HOLD"
+    if rsi_val < 30:
+        signal = "BUY"
+    elif rsi_val > 70:
+        signal = "SELL"
+    return {
+        "signal": signal,
+        "confidence": 50,
+        "entry": price,
+        "stop_loss": round(price * 0.995, 2) if signal == "BUY" else round(price * 1.005, 2),
+        "take_profit": round(price * 1.005, 2) if signal == "BUY" else round(price * 0.995, 2),
+        "reason": "Fallback: analisa berdasarkan RSI saja (AI error)",
+        "timeframe_confluence": False,
+        "dominant_timeframe": "M5",
+        "ict_setup": "none",
+        "htf_bias": "neutral",
+    }
+
+
+def analyze(tf_analysis, price, max_retries=3):
+    prompt = _build_prompt(tf_analysis, price)
+    fallback_ind = None
+    if "M5" in tf_analysis:
+        fallback_ind = tf_analysis["M5"][1]
+    elif "M15" in tf_analysis:
+        fallback_ind = tf_analysis["M15"][1]
     for attempt in range(max_retries):
         try:
             resp = client.chat.completions.create(
@@ -156,31 +208,10 @@ def analyze(data_m5, data_m15, price, ind_m5=None, ind_m15=None, max_retries=3):
             if attempt < max_retries - 1:
                 time.sleep(1)
                 continue
-            return [_fallback_signal(price, ind_m5)]
+            return [_fallback_signal(price, fallback_ind)]
         except Exception:
             if attempt < max_retries - 1:
                 time.sleep(2)
                 continue
-            return [_fallback_signal(price, ind_m5)]
-    return [_fallback_signal(price, ind_m5)]
-
-def _fallback_signal(price, ind_m5):
-    rsi_val = 50
-    if ind_m5 and "rsi" in ind_m5:
-        rsi_val = ind_m5["rsi"]
-    signal = "HOLD"
-    if rsi_val < 30:
-        signal = "BUY"
-    elif rsi_val > 70:
-        signal = "SELL"
-    return {
-        "signal": signal,
-        "confidence": 50,
-        "entry": price,
-        "stop_loss": round(price * 0.995, 2) if signal == "BUY" else round(price * 1.005, 2),
-        "take_profit": round(price * 1.005, 2) if signal == "BUY" else round(price * 0.995, 2),
-        "reason": "Fallback: analisa berdasarkan RSI saja (AI error)",
-        "timeframe_confluence": False,
-        "dominant_timeframe": "M5",
-        "ict_setup": "none",
-    }
+            return [_fallback_signal(price, fallback_ind)]
+    return [_fallback_signal(price, fallback_ind)]

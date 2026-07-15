@@ -36,17 +36,19 @@ async def _run_analysis(force=False):
         if price is None:
             return None, "Gagal mengambil harga XAUUSD"
 
-        ind_m5 = calculate_all(data["M5"]) if not data["M5"].empty else None
-        ind_m15 = calculate_all(data["M15"]) if not data["M15"].empty else None
+        tf_analysis = {}
+        for tf_name in ["M5", "M15", "H1", "H4", "D1"]:
+            df = data.get(tf_name)
+            if df is not None and not df.empty:
+                ind = calculate_all(df)
+                snr = analyze_snr(df)
+                ict = analyze_ict_smc(df)
+                tf_analysis[tf_name] = (df, ind, snr, ict)
 
-        if ind_m5 is None and ind_m15 is None:
+        if not tf_analysis:
             return None, "Data candlestick tidak mencukupi untuk analisa"
 
-        signals = analyze(
-            data["M5"] if not data["M5"].empty else None,
-            data["M15"] if not data["M15"].empty else None,
-            price, ind_m5, ind_m15,
-        )
+        signals = analyze(tf_analysis, price)
 
         if not signals:
             return None, "Gagal mendapat analisa dari AI"
@@ -133,7 +135,7 @@ async def monitor_outcomes(context: ContextTypes.DEFAULT_TYPE):
 
 async def signal_command(update, context):
     chat_id = update.effective_chat.id
-    await update.message.reply_text("\u23f3 Menganalisa market... (GLM-5.2 AI + ICT/SMC + SNR processing)")
+    await update.message.reply_text("\u23f3 Menganalisa market... (Multi-TF: D1/H4/H1/M15/M5 + ICT/SMC + SNR)")
     results, error = await _run_analysis(force=True)
     if error:
         await update.message.reply_text(f"\u274c {error}")
@@ -204,18 +206,22 @@ async def news_command(update, context):
         await update.message.reply_text(f"\u274c Gagal mengambil jadwal news: {str(e)[:100]}")
 
 async def ict_command(update, context):
-    await update.message.reply_text("\u23f3 Menganalisa ICT/SMC + SNR...")
+    await update.message.reply_text("\u23f3 Menganalisa ICT/SMC + SNR (Multi-TF)...")
     data = get_all_timeframes()
     session = get_market_session()["session"]
     dxy = get_dxy_price()
-    snr_m5 = analyze_snr(data["M5"]) if not data["M5"].empty else None
-    ict_m5 = analyze_ict_smc(data["M5"]) if not data["M5"].empty else None
-    snr_m15 = analyze_snr(data["M15"]) if not data["M15"].empty else None
-    ict_m15 = analyze_ict_smc(data["M15"]) if not data["M15"].empty else None
-    if not snr_m5 or not snr_m15:
+    tf_ict_data = {}
+    for tf_name in ["D1", "H4", "H1", "M15", "M5"]:
+        df = data.get(tf_name)
+        if df is not None and not df.empty:
+            snr = analyze_snr(df)
+            ict = analyze_ict_smc(df)
+            if snr and ict:
+                tf_ict_data[tf_name] = (snr, ict)
+    if not tf_ict_data:
         await update.message.reply_text("Data tidak mencukupi untuk analisa ICT/SMC.")
         return
-    msg = format_ict_analysis(snr_m5, ict_m5, snr_m15, ict_m15, session, dxy)
+    msg = format_ict_analysis(tf_ict_data, session, dxy)
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def winrate_command(update, context):
@@ -237,14 +243,19 @@ async def winrate_command(update, context):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def indicators_command(update, context):
-    await update.message.reply_text("\u23f3 Mengambil data indikator...")
+    await update.message.reply_text("\u23f3 Mengambil data indikator (Multi-TF)...")
     data = get_all_timeframes()
-    ind_m5 = calculate_all(data["M5"]) if not data["M5"].empty else None
-    ind_m15 = calculate_all(data["M15"]) if not data["M15"].empty else None
-    if ind_m5 is None and ind_m15 is None:
+    tf_inds = {}
+    for tf_name in ["D1", "H4", "H1", "M15", "M5"]:
+        df = data.get(tf_name)
+        if df is not None and not df.empty:
+            ind = calculate_all(df)
+            if ind:
+                tf_inds[tf_name] = ind
+    if not tf_inds:
         await update.message.reply_text("Data indikator tidak tersedia.")
         return
-    msg = f"\U0001f4ca *Indikator Teknikal XAUUSD*\nHarga: ${data['price']}\n{format_indicators(ind_m5, ind_m15)}"
+    msg = f"\U0001f4ca *Indikator Teknikal XAUUSD (Multi-TF)*\nHarga: ${data['price']}\n{format_indicators(tf_inds)}"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def status_command(update, context):

@@ -13,6 +13,8 @@ MONITOR_INTERVAL_SECONDS = int(os.getenv("MONITOR_INTERVAL_SECONDS", "120"))
 TIMEFRAMES = {
     "M5": {"interval": "5m", "period": "1d", "candles": 50},
     "M15": {"interval": "15m", "period": "2d", "candles": 30},
+    "H1": {"interval": "60m", "period": "5d", "candles": 50},
+    "D1": {"interval": "1d", "period": "1mo", "candles": 30},
 }
 
 INDICATOR_PARAMS = {

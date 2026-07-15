@@ -10,6 +10,7 @@ def format_signal(data):
     confluence = data.get("timeframe_confluence", False)
     dom_tf = data.get("dominant_timeframe", "M5")
     ict = data.get("ict_setup", "none")
+    htf_bias = data.get("htf_bias", "neutral")
 
     signal_emoji = {"BUY": "\U0001f7e2", "SELL": "\U0001f534", "HOLD": "\u23f8\ufe0f"}
     direction_emoji = {"BUY": "\U0001f4c8", "SELL": "\U0001f4c9", "HOLD": "\u27a1\ufe0f"}
@@ -23,6 +24,7 @@ def format_signal(data):
         return f"${v}" if v and float(v) != 0 else "—"
 
     ict_line = f"\n\u200b*ICT Setup:* {ict}" if ict and ict != "none" else ""
+    bias_emoji = {"bullish": "\U0001f7e2", "bearish": "\U0001f534", "neutral": "\u26aa"}.get(htf_bias, "\u26aa")
 
     msg = f"""
 {emoji} *SINYAL SCALPING XAUUSD* {dir_emoji}
@@ -36,9 +38,11 @@ def format_signal(data):
 *Take Profit:* {_fmt(tp)}
 *Risk/Reward:* 1:{_calc_rr(entry, sl, tp, signal)}{ict_line}
 
+*HTF Bias:* {bias_emoji} {htf_bias.upper()}
+*Dominant TF:* {dom_tf} | Multi-TF Konfluensi: {'\u2705 Ya' if confluence else '\u26a0\ufe0f Tidak'}
+
 *Alasan Entry:* _{reason}_
 
-*Timeframe:* {dom_tf} | Konfluensi M5 & M15: {'\u2705 Ya' if confluence else '\u26a0\ufe0f Tidak'}
 *Waktu:* {datetime.now().strftime('%H:%M:%S')} WIB
 """
     return msg
@@ -59,7 +63,7 @@ def _calc_rr(entry, sl, tp, signal):
     except (TypeError, ValueError):
         return "—"
 
-def format_indicators(ind_m5, ind_m15):
+def format_indicators(tf_inds):
     def _fmt(name, ind):
         if ind is None:
             return f"*{name}:* Data tidak tersedia"
@@ -72,9 +76,13 @@ EMA 9: {ind['ema_9']} | EMA 21: {ind['ema_21']} | EMA 50: {ind['ema_50']}
 Support: {ind['sr']['nearest_support']} | Res: {ind['sr']['nearest_resistance']}
 ATR: {ind.get('atr', '—')}
 """
-    return f"{_fmt('M5', ind_m5)}\n{_fmt('M15', ind_m15)}"
+    parts = []
+    for tf_name in ["D1", "H4", "H1", "M15", "M5"]:
+        if tf_name in tf_inds:
+            parts.append(_fmt(tf_name, tf_inds[tf_name]))
+    return "\n".join(parts) if parts else "Data indikator tidak tersedia."
 
-def format_ict_analysis(snr_m5, ict_m5, snr_m15, ict_m15, session, dxy):
+def format_ict_analysis(tf_ict_data, session, dxy):
     def _fmt_snr_ict(tf, snr, ict):
         ob = ict["order_blocks"]
         fvg = ict["fvg"]
@@ -89,11 +97,16 @@ Liq Sweep: {'yes' if liq['liquidity_sweep_detected'] else 'no'}
 Buy Liq: {liq['buy_side_liquidity'][:2]} | Sell Liq: {liq['sell_side_liquidity'][:2]}
 Killzone: {ict['killzone'][:30]}
 """
+    parts = []
+    for tf_name in ["D1", "H4", "H1", "M15", "M5"]:
+        if tf_name in tf_ict_data:
+            snr, ict = tf_ict_data[tf_name]
+            parts.append(_fmt_snr_ict(tf_name, snr, ict))
     msg = f"""\U0001f9e0 *ICT / SMC + SNR Analysis*
 {'\u2500' * 30}
 Session: {session} | DXY: {dxy}
-{_fmt_snr_ict('M5', snr_m5, ict_m5)}
-{_fmt_snr_ict('M15', snr_m15, ict_m15)}"""
+"""
+    msg += "\n".join(parts)
     return msg
 
 def format_news(events):
@@ -183,22 +196,27 @@ Closed: {wr['closed']}
 
 def format_start():
     return f"""
-\U0001f916 *XAUUSD Scalping Signal Bot v2.0*
+\U0001f916 *XAUUSD Scalping Signal Bot v3.0*
 {'\u2500' * 25}
-\u2728 *NEW:* ICT/SMC + SNR + Fundamental Analysis
+\u2728 *Multi-Timeframe:* D1 + H4 + H1 + M15 + M5
+\u2728 *Features:* ICT/SMC + SNR + Fundamental + HTF Bias
 
 *Commands:*
 /signal \u2014 Sinyal instan (bypass filter)
 /start \u2014 Pesan ini
-/subscribe \u2014 Aktifkan smart alert (sinyal confidence \u226580%)
+/subscribe \u2014 Aktifkan smart alert
 /unsubscribe \u2014 Nonaktifkan smart alert
 /subscribe\\_news \u2014 Alert news HIGH impact
 /unsubscribe\\_news \u2014 Stop news alert
 /news \u2014 Jadwal ekonomi hari ini
-/ict \u2014 Detail ICT/SMC + SNR analysis
-/indicators \u2014 Indikator teknikal
+/ict \u2014 Detail ICT/SMC + SNR (Multi-TF)
+/indicators \u2014 Indikator teknikal (Multi-TF)
 /winrate \u2014 Statistik winrate
 /status \u2014 Status bot
+
+*Timeframe Roles:*
+D1 \u2192 Bias | H4 \u2192 Structure | H1 \u2192 Confirmation
+M15 \u2192 Timing | M5 \u2192 Precision Entry
 
 *Smart Alert:* Monitor market tiap 2 menit + kirim sinyal setup bagus.
 *News Alert:* Notifikasi 30 menit sebelum event HIGH impact USD.
