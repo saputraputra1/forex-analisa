@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+from config import now_jakarta
 
 def format_signal(data):
     signal = data.get("signal", "HOLD")
@@ -25,10 +26,11 @@ def format_signal(data):
 
     ict_line = f"\n\u200b*ICT Setup:* {ict}" if ict and ict != "none" else ""
     bias_emoji = {"bullish": "\U0001f7e2", "bearish": "\U0001f534", "neutral": "\u26aa"}.get(htf_bias, "\u26aa")
+    stale_warn = "\n\u26a0\ufe0f *Data mungkin stale (market tutup)*\n" if data.get("_data_stale") else ""
 
     msg = f"""
 {emoji} *SINYAL SCALPING XAUUSD* {dir_emoji}
-{'\u2500' * 30}
+{'\u2500' * 30}{stale_warn}
 
 *Sinyal:* {signal}
 *Confidence:* {conf_color} {confidence}%
@@ -43,7 +45,7 @@ def format_signal(data):
 
 *Alasan Entry:* _{reason}_
 
-*Waktu:* {datetime.now().strftime('%H:%M:%S')} WIB
+*Waktu:* {now_jakarta().strftime('%H:%M:%S')} WIB
 """
     return msg
 
@@ -137,7 +139,9 @@ Hindari entry scalping 5 menit sebelum & sesudah rilis.
 def _calc_duration(timestamp_str):
     try:
         t = datetime.fromisoformat(timestamp_str)
-        delta = datetime.now() - t
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        delta = now_jakarta() - t
         mins = int(delta.total_seconds() / 60)
         if mins < 60:
             return f"{mins}m"
@@ -161,7 +165,7 @@ TP: ${data['take_profit']}
 Profit: *{pips_str} pips*
 Harga Exit: ${data.get('exit_price', '-')}
 Durasi: {dur}
-Waktu: {datetime.now().strftime('%H:%M')} WIB
+Waktu: {now_jakarta().strftime('%H:%M')} WIB
 """
 
 def format_sl_alert(data):
@@ -176,7 +180,7 @@ SL: ${data['stop_loss']}
 Loss: *{pips_str} pips*
 Harga Exit: ${data.get('exit_price', '-')}
 Durasi: {dur}
-Waktu: {datetime.now().strftime('%H:%M')} WIB
+Waktu: {now_jakarta().strftime('%H:%M')} WIB
 """
 
 def format_winrate(wr):

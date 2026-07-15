@@ -1,9 +1,18 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timezone
+from config import now_jakarta
 
 SYMBOL = "GC=F"
+
+STALE_THRESHOLD_MIN = {
+    "M5": 15,
+    "M15": 30,
+    "H1": 120,
+    "H4": 300,
+    "D1": 1440,
+}
 
 def get_current_price():
     ticker = yf.Ticker(SYMBOL)
@@ -22,6 +31,8 @@ def get_candles(interval="5m", period="1d", limit=50):
         return pd.DataFrame()
     data = data.tail(limit).copy()
     data.columns = [c.lower() for c in data.columns]
+    if data.index.tz is None:
+        data.index = pd.DatetimeIndex(data.index).tz_localize("UTC")
     return data
 
 def get_live_candles_m5(limit=50):
@@ -40,7 +51,6 @@ def resample_h4(df_h1):
     if df_h1.empty or len(df_h1) < 4:
         return pd.DataFrame()
     df = df_h1.copy()
-    df.index = pd.to_datetime(df.index)
     h4 = df.resample("4h").agg({
         "open": "first",
         "high": "max",
@@ -49,6 +59,16 @@ def resample_h4(df_h1):
         "volume": "sum",
     }).dropna(subset=["close"])
     return h4.tail(30)
+
+def _get_candle_age_min(df):
+    if df.empty:
+        return None
+    last_time = df.index[-1]
+    now_utc = datetime.now(timezone.utc)
+    if last_time.tzinfo is None:
+        last_time = last_time.tz_localize("UTC")
+    delta = now_utc - last_time
+    return delta.total_seconds() / 60
 
 def get_all_timeframes():
     m5 = get_live_candles_m5(50)
@@ -65,6 +85,16 @@ def get_all_timeframes():
     if price is None:
         price = get_current_price()
 
+    data_stale = False
+    for tf_name, df, threshold in [
+        ("M5", m5, STALE_THRESHOLD_MIN["M5"]),
+        ("M15", m15, STALE_THRESHOLD_MIN["M15"]),
+    ]:
+        age = _get_candle_age_min(df)
+        if age is not None and age > threshold:
+            data_stale = True
+            break
+
     return {
         "price": price,
         "M5": m5,
@@ -72,5 +102,6 @@ def get_all_timeframes():
         "H1": h1,
         "H4": h4,
         "D1": d1,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "data_stale": data_stale,
+        "timestamp": now_jakarta().strftime("%Y-%m-%d %H:%M:%S"),
     }

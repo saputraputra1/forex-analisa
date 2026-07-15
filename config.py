@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -9,6 +10,11 @@ NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "z-ai/glm-5.2")
 NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
 MIN_CONFIDENCE = int(os.getenv("MIN_CONFIDENCE", "55"))
 MONITOR_INTERVAL_SECONDS = int(os.getenv("MONITOR_INTERVAL_SECONDS", "120"))
+
+JAKARTA_TZ = timezone(timedelta(hours=7))
+
+def now_jakarta():
+    return datetime.now(JAKARTA_TZ)
 
 TIMEFRAMES = {
     "M5": {"interval": "5m", "period": "1d", "candles": 50},

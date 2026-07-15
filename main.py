@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from config import now_jakarta
 
 from telegram import Update, BotCommand
 from telegram.error import Conflict
@@ -58,6 +59,7 @@ async def _run_analysis(force=False):
             if force or s["confidence"] >= MIN_CONFIDENCE:
                 sid = log_signal(s)
                 s["_id"] = sid
+                s["_data_stale"] = data.get("data_stale", False)
                 results.append(s)
 
         if not results:
@@ -276,7 +278,7 @@ async def status_command(update, context):
 \u2022 Min confidence: {MIN_CONFIDENCE}%
 \u2022 Total sinyal: {wr['total']}
 \u2022 Winrate: {wr['winrate']}%
-\u2022 Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+\u2022 Update: {now_jakarta().strftime('%Y-%m-%d %H:%M:%S')} WIB
 """
     await update.message.reply_text(msg, parse_mode="Markdown")
 
