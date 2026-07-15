@@ -33,7 +33,7 @@ async def _run_analysis(force=False):
         data = get_all_timeframes()
         price = data["price"]
         if price is None:
-            return None, "Gagal mendapatkan harga XAUUSD"
+            return None, "Gagal mengambil harga XAUUSD"
 
         ind_m5 = calculate_all(data["M5"]) if not data["M5"].empty else None
         ind_m15 = calculate_all(data["M15"]) if not data["M15"].empty else None
@@ -41,34 +41,40 @@ async def _run_analysis(force=False):
         if ind_m5 is None and ind_m15 is None:
             return None, "Data candlestick tidak mencukupi untuk analisa"
 
-        result = analyze(
+        signals = analyze(
             data["M5"] if not data["M5"].empty else None,
             data["M15"] if not data["M15"].empty else None,
             price, ind_m5, ind_m15,
         )
 
-        if result is None:
+        if not signals:
             return None, "Gagal mendapat analisa dari AI"
 
-        if not force and result["confidence"] < MIN_CONFIDENCE:
+        results = []
+        for s in signals:
+            if force or s["confidence"] >= MIN_CONFIDENCE:
+                sid = log_signal(s)
+                s["_id"] = sid
+                results.append(s)
+
+        if not results:
             return None, None
 
-        sid = log_signal(result)
-        result["_id"] = sid
-        return result, None
+        return results, None
     except Exception as e:
         logger.exception("Error in _run_analysis")
         return None, f"Error: {str(e)}"
 
 async def send_signal(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
-    result, error = await _run_analysis(force=False)
-    if error or result is None:
+    results, error = await _run_analysis(force=False)
+    if error or results is None:
         return
-    msg = format_signal(result)
-    try:
-        await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
-    except Exception as e:
-        logger.error(f"Failed to send signal: {e}")
+    for result in results:
+        msg = format_signal(result)
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+        except Exception as e:
+            logger.error(f"Failed to send signal: {e}")
 
 async def monitor_market(context: ContextTypes.DEFAULT_TYPE):
     if not subscribers:
@@ -98,16 +104,17 @@ async def monitor_news(context: ContextTypes.DEFAULT_TYPE):
 
 async def signal_command(update, context):
     chat_id = update.effective_chat.id
-    await update.message.reply_text("\u23f3 Menganalisa market... (DeepSeek AI + ICT/SMC + SNR processing)")
-    result, error = await _run_analysis(force=True)
+    await update.message.reply_text("\u23f3 Menganalisa market... (GLM-5.2 AI + ICT/SMC + SNR processing)")
+    results, error = await _run_analysis(force=True)
     if error:
         await update.message.reply_text(f"\u274c {error}")
         return
-    if result is None:
+    if not results:
         await update.message.reply_text("\u23f8\ufe0f Tidak ada sinyal valid saat ini.")
         return
-    msg = format_signal(result)
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    for result in results:
+        msg = format_signal(result)
+        await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def start_command(update, context):
     await update.message.reply_text(format_start(), parse_mode="Markdown")

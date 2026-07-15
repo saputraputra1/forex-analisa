@@ -56,18 +56,26 @@ Sell-side Liq: {', '.join(map(str, liq['sell_side_liquidity'])) if liq['sell_sid
     dxy = get_dxy_price()
 
     prompt = f"""[ROLE]
-Anda adalah analis trading XAUUSD (Gold vs USD) spesialis SCALPING dengan konsep ICT/SMC (Inner Circle Trader / Smart Money Concepts). Target winrate 85-90%. Anda hanya memberikan sinyal ketika konfigurasi teknikal + ICT sangat kuat dan mendukung.
+Anda adalah analis trading XAUUSD (Gold vs USD) spesialis SCALPING dengan konsep ICT/SMC (Inner Circle Trader / Smart Money Concepts). Target winrate 85-90%. Tugas Anda adalah MENEMUKAN setup trading, bukan menolaknya. Jika ada 1-2 konfluensi saja, sudah cukup untuk memberikan sinyal.
 
 [INSTRUKSI]
 1. Analisa data TEKNIKAL + SNR + ICT/SMC M5 dan M15 di bawah
-2. Cari konfluensi antara M5 dan M15
-3. Gunakan konsep ICT/SMC: Order Block, FVG, Liquidity Sweep, Killzone, Market Structure
-4. Tentukan sinyal: BUY jika bullish, SELL jika bearish, HOLD jika tidak jelas
-5. Berikan confidence 0-100%, HOLD jika <80%
+2. Hasilkan ARRAY 2-5 sinyal berbeda (buy dan sell boleh campur tergantung setup)
+3. Setiap sinyal harus punya entry presisi di OB/FVG/support/resistance zone
+4. Gunakan konsep ICT/SMC: Order Block, FVG, Liquidity Sweep, Killzone, Market Structure
+5. Confidence minimal 55% untuk BUY/SELL. Hanya HOLD jika market benar-benar flat/ranging tanpa arah
 6. Entry price presisi (idealnya di OB/FVG zone)
-7. Stop loss di bawah/atas OB terdekat atau swing high/low
-8. Take profit di liquidity atau swing terdekat
+7. Stop loss di bawah/atas OB terdekat atau swing high/low (max 30 pips / $30)
+8. Take profit di liquidity atau swing terdekat (min 1:1.5 RR)
 9. Alasan harus mencakup: konfluensi teknikal, SNR level, ICT setup, dan killzone
+10. Jika ada BOS/CHoCH + OB/FVG yang searah, WAJIB kasih sinyal (jangan HOLD)
+
+[TIPS AGAR TIDAK HOLD]
+- RSI < 35 atau > 65 = momentum kuat, cari entry searah
+- MACD histogram berubah warna = potensi reversal
+- Harga di dekat OB/FVG + ada BOS = entry valid
+- Stochastic oversold/overbought + BB squeeze = breakout imminent
+- EMA crossover (9 vs 21) = trend shift, cari entry pullback
 
 [DATA SAAT INI]
 Harga Spot: ${price}
@@ -78,19 +86,48 @@ DXY (Dollar Index): {dxy or 'N/A'}
 
 {fmt_ind("M15", ind_m15, analyze_snr(data_m15), analyze_ict_smc(data_m15)) if ind_m15 is not None else "[M15] Data tidak mencukupi"}
 
-[OUTPUT FORMAT JSON SAJA]:
-{{
-  "signal": "BUY" | "SELL" | "HOLD",
-  "confidence": 85,
-  "entry": 2345.67,
-  "stop_loss": 2338.00,
-  "take_profit": 2353.00,
-  "reason": "Alasan teknikal + ICT/SMC + SNR (max 3 kalimat)",
-  "timeframe_confluence": true,
-  "dominant_timeframe": "M5",
-  "ict_setup": "OB + FVG + Liquidity Sweep" | "none" | "..."
-}}"""
+[OUTPUT FORMAT - JSON ARRAY SAJA, minimal 2 sinyal]:
+[
+  {{
+    "signal": "BUY" | "SELL",
+    "confidence": 72,
+    "entry": 2345.67,
+    "stop_loss": 2338.00,
+    "take_profit": 2353.00,
+    "reason": "Alasan teknikal + ICT/SMC + SNR (max 3 kalimat)",
+    "timeframe_confluence": true,
+    "dominant_timeframe": "M5",
+    "ict_setup": "OB + FVG"
+  }},
+  {{
+    "signal": "SELL",
+    "confidence": 65,
+    "entry": 2350.00,
+    "stop_loss": 2356.00,
+    "take_profit": 2340.00,
+    "reason": "...",
+    "timeframe_confluence": false,
+    "dominant_timeframe": "M15",
+    "ict_setup": "Liquidity Sweep + Bearish OB"
+  }}
+]"""
     return prompt
+
+def _validate_signal(result, price):
+    required = ["signal", "confidence", "entry", "stop_loss", "take_profit", "reason"]
+    for field in required:
+        if field not in result:
+            result[field] = None
+    if result["signal"] not in ("BUY", "SELL", "HOLD"):
+        result["signal"] = "HOLD"
+    if result["confidence"] is None:
+        result["confidence"] = 0
+    result["confidence"] = min(100, max(0, int(result["confidence"])))
+    if "ict_setup" not in result:
+        result["ict_setup"] = "none"
+    if result["entry"] is None:
+        result["entry"] = price
+    return result
 
 def analyze(data_m5, data_m15, price, ind_m5=None, ind_m15=None, max_retries=3):
     prompt = _build_prompt(data_m5, data_m15, price, ind_m5, ind_m15)
@@ -101,35 +138,31 @@ def analyze(data_m5, data_m15, price, ind_m5=None, ind_m15=None, max_retries=3):
                 messages=[{"role": "user", "content": prompt}],
                 temperature=1,
                 top_p=1,
-                max_tokens=800,
+                max_tokens=2000,
                 seed=42,
             )
             text = resp.choices[0].message.content.strip()
             text = text.replace("```json", "").replace("```", "").strip()
             result = json.loads(text)
-            required = ["signal", "confidence", "entry", "stop_loss", "take_profit", "reason"]
-            for field in required:
-                if field not in result:
-                    result[field] = None
-            if result["signal"] not in ("BUY", "SELL", "HOLD"):
-                result["signal"] = "HOLD"
-            if result["confidence"] is None:
-                result["confidence"] = 0
-            result["confidence"] = min(100, max(0, int(result["confidence"])))
-            if "ict_setup" not in result:
-                result["ict_setup"] = "none"
-            return result
+            if isinstance(result, list):
+                signals = [_validate_signal(r, price) for r in result]
+                signals = [s for s in signals if s["signal"] in ("BUY", "SELL")]
+                if not signals:
+                    signals = [_validate_signal(result[0], price)]
+                return signals[:5]
+            else:
+                return [_validate_signal(result, price)]
         except json.JSONDecodeError:
             if attempt < max_retries - 1:
                 time.sleep(1)
                 continue
-            return _fallback_signal(price, ind_m5)
+            return [_fallback_signal(price, ind_m5)]
         except Exception:
             if attempt < max_retries - 1:
                 time.sleep(2)
                 continue
-            return _fallback_signal(price, ind_m5)
-    return _fallback_signal(price, ind_m5)
+            return [_fallback_signal(price, ind_m5)]
+    return [_fallback_signal(price, ind_m5)]
 
 def _fallback_signal(price, ind_m5):
     rsi_val = 50
