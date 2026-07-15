@@ -123,9 +123,10 @@ def get_pending_signals():
     conn.close()
     return [dict(r) for r in rows]
 
-def check_outcomes(current_price):
+def check_outcomes(current_price, min_age_minutes=30):
     pending = get_pending_signals()
     results = []
+    now = datetime.now()
     for s in pending:
         signal_type = s["signal"]
         tp = s["take_profit"]
@@ -133,6 +134,17 @@ def check_outcomes(current_price):
         entry = s["entry"]
         if not tp or not sl or not entry:
             continue
+
+        # skip sinyal yg masih terlalu muda — kasih waktu buat harga bergerak
+        ts = s.get("timestamp")
+        if ts:
+            try:
+                age = now - datetime.fromisoformat(ts)
+                if age.total_seconds() < min_age_minutes * 60:
+                    continue
+            except Exception:
+                pass
+
         outcome = None
         if signal_type == "BUY":
             if current_price >= tp:
