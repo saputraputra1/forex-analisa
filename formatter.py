@@ -121,6 +121,51 @@ Forecast: {event['forecast']} | Previous: {event['previous']}
 Hindari entry scalping 5 menit sebelum & sesudah rilis.
 """
 
+def _calc_duration(timestamp_str):
+    try:
+        t = datetime.fromisoformat(timestamp_str)
+        delta = datetime.now() - t
+        mins = int(delta.total_seconds() / 60)
+        if mins < 60:
+            return f"{mins}m"
+        hours = mins // 60
+        rem = mins % 60
+        if rem == 0:
+            return f"{hours}j"
+        return f"{hours}j {rem}m"
+    except Exception:
+        return "-"
+
+def format_tp_alert(data):
+    pips = data.get("pips", 0)
+    pips_str = f"+{pips}" if pips >= 0 else str(pips)
+    dur = _calc_duration(data.get("timestamp", ""))
+    return f"""
+\U0001f3af *TP KENA\\!*
+{'\u2500' * 30}
+Sinyal: *{data['signal']}* @ ${data['entry']}
+TP: ${data['take_profit']}
+Profit: *{pips_str} pips*
+Harga Exit: ${data.get('exit_price', '-')}
+Durasi: {dur}
+Waktu: {datetime.now().strftime('%H:%M')} WIB
+"""
+
+def format_sl_alert(data):
+    pips = data.get("pips", 0)
+    pips_str = str(pips)
+    dur = _calc_duration(data.get("timestamp", ""))
+    return f"""
+\U0001f4a5 *SL KENA\\!*
+{'\u2500' * 30}
+Sinyal: *{data['signal']}* @ ${data['entry']}
+SL: ${data['stop_loss']}
+Loss: *{pips_str} pips*
+Harga Exit: ${data.get('exit_price', '-')}
+Durasi: {dur}
+Waktu: {datetime.now().strftime('%H:%M')} WIB
+"""
+
 def format_winrate(wr):
     bar_wins = "\u2588" * (wr["wins"] if wr["closed"] > 0 else 0)
     bar_losses = "\u2591" * (wr["losses"] if wr["closed"] > 0 else 0)

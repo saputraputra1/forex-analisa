@@ -13,10 +13,11 @@ from ict_smc import analyze_ict_smc
 from news_calendar import get_upcoming_events, get_imminent_events
 from fundamental_analyzer import analyze_fundamental, get_market_session, get_dxy_price
 from ai_analyzer import analyze
-from signal_logger import init_db, log_signal, get_winrate, get_recent_signals
+from signal_logger import init_db, log_signal, get_winrate, get_recent_signals, check_outcomes, auto_close_expired
 from formatter import (
     format_signal, format_indicators, format_winrate, format_start,
     format_ict_analysis, format_news, format_news_alert,
+    format_tp_alert, format_sl_alert,
 )
 
 logging.basicConfig(
@@ -101,6 +102,34 @@ async def monitor_news(context: ContextTypes.DEFAULT_TYPE):
                     await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
                 except Exception:
                     continue
+
+async def monitor_outcomes(context: ContextTypes.DEFAULT_TYPE):
+    if not subscribers:
+        return
+    try:
+        data = get_all_timeframes()
+        price = data["price"]
+        if price is None:
+            return
+        auto_close_expired(hours=24)
+        hits = check_outcomes(price)
+        if not hits:
+            return
+        logger.info(f"Outcome alerts: {len(hits)} signal(s) hit TP/SL")
+        for h in hits:
+            if h["outcome"] == "WIN":
+                msg = format_tp_alert(h)
+            elif h["outcome"] == "LOSS":
+                msg = format_sl_alert(h)
+            else:
+                continue
+            for chat_id in list(subscribers):
+                try:
+                    await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+                except Exception:
+                    continue
+    except Exception as e:
+        logger.error(f"Error in monitor_outcomes: {e}")
 
 async def signal_command(update, context):
     chat_id = update.effective_chat.id
@@ -192,12 +221,19 @@ async def ict_command(update, context):
 async def winrate_command(update, context):
     wr = get_winrate()
     msg = format_winrate(wr)
-    recent = get_recent_signals(5)
+    recent = get_recent_signals(10)
     if recent:
-        msg += "\n*5 Sinyal Terakhir:*\n"
+        msg += "\n*10 Sinyal Terakhir:*\n"
         for s in recent:
-            emoji = {"WIN": "\u2705", "LOSS": "\u274c", "PENDING": "\u23f3"}.get(s["outcome"], "\u2753")
-            msg += f"{emoji} {s['signal']} | Entry ${s['entry']} | Conf {s['confidence']}% | {s['outcome'] or 'PENDING'}\n"
+            emoji = {"WIN": "\u2705", "LOSS": "\u274c", "PENDING": "\u23f3", "NONE": "\u23ed\ufe0f"}.get(s["outcome"], "\u2753")
+            pips = s.get("pips")
+            pips_str = f" | {pips:+.1f} pips" if pips is not None else ""
+            tp_sl = ""
+            if s.get("take_profit"):
+                tp_sl += f" TP${s['take_profit']}"
+            if s.get("stop_loss"):
+                tp_sl += f" SL${s['stop_loss']}"
+            msg += f"{emoji} {s['signal']} ${s['entry']} | {s['confidence']}%{tp_sl}{pips_str}\n"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def indicators_command(update, context):
@@ -289,6 +325,7 @@ def main():
     job_queue = app.job_queue
     job_queue.run_repeating(monitor_market, interval=MONITOR_INTERVAL_SECONDS, first=10)
     job_queue.run_repeating(monitor_news, interval=60, first=20)
+    job_queue.run_repeating(monitor_outcomes, interval=60, first=30)
 
     logger.info("Bot started. Press Ctrl+C to stop.")
     app.run_polling(drop_pending_updates=True)
